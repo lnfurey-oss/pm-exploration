@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Premortem Action Copilot</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <p class="eyebrow">V0</p>
+        <h1>Premortem Action Copilot</h1>
+        <p class="subtitle">
+          Convert a project concern into 1-2 practical actions for a two-week mitigation horizon.
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>Generate action set</h2>
+        <form id="premortem-form">
+          <label>
+            Your name
+            <input name="user_name" required placeholder="Jane Product" />
+          </label>
+          <label>
+            Your email
+            <input name="user_email" type="email" required placeholder="pm@company.com" />
+          </label>
+          <label>
+            Initiative
+            <input name="initiative_name" required placeholder="Q3 Onboarding Rollout" />
+          </label>
+          <label>
+            Concern
+            <textarea name="concern_text" rows="4" required placeholder="What could go wrong in delivery or scale?"></textarea>
+          </label>
+          <label>
+            Observed signals (optional)
+            <textarea name="observed_signals" rows="3" placeholder="Field feedback, support signals, internal dialogue..."></textarea>
+          </label>
+
+          <div class="grid-2">
+            <label>
+              Severity
+              <select name="severity" required>
+                <option value="medium" selected>medium</option>
+                <option value="low">low</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+            <label>
+              Impact level
+              <select name="impact_level" required>
+                <option value="medium" selected>medium</option>
+                <option value="low">low</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+          </div>
+
+          <button type="submit">Generate near-term actions</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Response</h2>
+        <pre id="reflection-output">Submit a concern to generate an action set.</pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

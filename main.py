@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Generator, List
 
+import requests
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from models import (
@@ -18,16 +22,22 @@ from models import (
     Decision,
     DecisionCreate,
     DecisionRead,
+    MitigationAction,
     Outcome,
     OutcomeCreate,
+    PremortemConcern,
+    PremortemConcernCreate,
+    PremortemPlanRead,
+    User,
 )
 
 DATABASE_URL = "sqlite:///./decisions.db"
+RETENTION_DAYS = 60
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-app = FastAPI(title="Product Decision Copilot")
+app = FastAPI(title="Premortem Decision Copilot")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -40,9 +50,121 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def cleanup_expired_concerns(db: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    expired = db.scalars(
+        select(PremortemConcern).where(PremortemConcern.created_at < cutoff)
+    ).all()
+    for item in expired:
+        db.delete(item)
+    if expired:
+        db.commit()
+    return len(expired)
+
+
+def pick_action_count(severity: str, impact_level: str) -> int:
+    return 2 if "high" in {severity, impact_level} else 1
+
+
+def deterministic_actions(payload: PremortemConcernCreate) -> list[dict]:
+    initiative = payload.initiative_name
+    concern = payload.concern_text
+    signals = payload.observed_signals or "field reports, support tickets, and discovery calls"
+
+    severity_map = {"low": 1, "medium": 2, "high": 3}
+    impact_map = {"low": 2, "medium": 3, "high": 5}
+
+    impact_score_base = min(10, severity_map[payload.severity] + impact_map[payload.impact_level] + 2)
+    confidence_base = 8 if payload.severity == "high" else 7 if payload.severity == "medium" else 6
+    actions = [
+        {
+            "title": "Validate concern signal with a 5-account sweep",
+            "description": (
+                f"Run structured outreach on 5 representative accounts tied to '{initiative}' to validate the concern: "
+                f"'{concern}'. Capture evidence from {signals} and identify the top failure mode that could appear in delivery or scale."
+            ),
+            "owner_role": "Product Manager",
+            "due_in_days": 5,
+            "impact_score": impact_score_base,
+            "effort_score": 3,
+            "confidence_score": confidence_base,
+            "leading_indicator": "Signal confidence score improves to >= 70% with documented failure pattern.",
+        },
+        {
+            "title": "Launch a two-week risk-offset experiment",
+            "description": (
+                f"Define and execute a lightweight mitigation experiment for '{initiative}' that directly offsets the concern. "
+                "Examples: adjusted onboarding step, support playbook update, or scope guardrail. Review at day 14."
+            ),
+            "owner_role": "PM + Engineering Lead",
+            "due_in_days": 14,
+            "impact_score": min(10, impact_score_base + 1),
+            "effort_score": 5,
+            "confidence_score": max(5, confidence_base - 1),
+            "leading_indicator": "Leading KPI trend improves for two consecutive weekly checkpoints.",
+        },
+    ]
+    return actions[: pick_action_count(payload.severity, payload.impact_level)]
+
+
+def llm_actions(payload: PremortemConcernCreate) -> tuple[list[dict], str]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    if not api_key:
+        return deterministic_actions(payload), "deterministic-fallback"
+
+    prompt = {
+        "task": "Generate 1-2 near-term mitigation actions over a 14-day horizon.",
+        "concern": payload.model_dump(),
+        "output_schema": {
+            "actions": [
+                {
+                    "title": "string",
+                    "description": "string",
+                    "owner_role": "string",
+                    "due_in_days": "int<=14",
+                    "impact_score": "1-10",
+                    "effort_score": "1-10",
+                    "confidence_score": "1-10",
+                    "leading_indicator": "string",
+                }
+            ]
+        },
+        "constraints": [
+            "Return JSON only.",
+            "Generate either 1 or 2 actions.",
+            "Action must be specific and practical for PM teams.",
+        ],
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a PM premortem mitigation planner."},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"]
+    parsed = json.loads(content)
+    actions = parsed.get("actions", [])
+    if not actions:
+        return deterministic_actions(payload), "deterministic-fallback"
+    return actions[:2], f"llm:{model}"
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        cleanup_expired_concerns(db)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -143,3 +265,57 @@ def reflect(decision_id: int, db: Session = Depends(get_db)) -> dict:
         "contradicted": contradicted,
         "summary": summary,
     }
+
+
+@app.post("/premortem/plan", response_model=PremortemPlanRead)
+def create_premortem_plan(
+    payload: PremortemConcernCreate, db: Session = Depends(get_db)
+) -> PremortemPlanRead:
+    cleanup_expired_concerns(db)
+
+    user = db.scalar(select(User).where(User.email == payload.user_email))
+    if not user:
+        user = User(name=payload.user_name, email=payload.user_email)
+        db.add(user)
+        db.flush()
+
+    concern = PremortemConcern(
+        user=user,
+        initiative_name=payload.initiative_name,
+        concern_text=payload.concern_text,
+        observed_signals=payload.observed_signals,
+        severity=payload.severity,
+        impact_level=payload.impact_level,
+    )
+    db.add(concern)
+    db.flush()
+
+    try:
+        generated_actions, source = llm_actions(payload)
+    except Exception:
+        generated_actions, source = deterministic_actions(payload), "deterministic-fallback"
+
+    persisted_actions = []
+    for action in generated_actions:
+        item = MitigationAction(
+            concern=concern,
+            title=action["title"],
+            description=action["description"],
+            owner_role=action["owner_role"],
+            due_in_days=min(14, max(1, int(action["due_in_days"]))),
+            impact_score=min(10, max(1, int(action["impact_score"]))),
+            effort_score=min(10, max(1, int(action["effort_score"]))),
+            confidence_score=min(10, max(1, int(action["confidence_score"]))),
+            leading_indicator=action["leading_indicator"],
+        )
+        db.add(item)
+        persisted_actions.append(item)
+
+    db.commit()
+    db.refresh(concern)
+
+    return PremortemPlanRead(
+        concern_id=concern.id,
+        generated_with=source,
+        actions=persisted_actions,
+    )
