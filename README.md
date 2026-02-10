@@ -1,37 +1,58 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/README.md b/README.md
-index 843cd67a7f70a150d61e34aca10184fe2ffe8a73..2e40203e0b7458f0454fb7b69fe4215b74225004 100644
---- a/README.md
-+++ b/README.md
-@@ -1 +1,26 @@
--# pm-exploration
-\ No newline at end of file
-+# pm-decision-copilot
-+
-+A lightweight product decision journaling API built with FastAPI and SQLite.
-+
-+## Setup
-+
-+```bash
-+pip install fastapi uvicorn sqlalchemy pydantic requests jinja2
-+```
-+
-+## Run the API
-+
-+```bash
-+uvicorn main:app --reload
-+```
-+
-+Then open the forwarded port in Codespaces to view the UI at `/`.
-+If you're running locally, open `http://127.0.0.1:8000/`.
-+
-+## Sample data
-+
-+Start the API, then run:
-+
-+```bash
-+python sample_data.py
-+```
- 
-EOF
-)
+# premortem-action-copilot
+
+A FastAPI web app that helps product managers convert premortem concerns into 1-2 near-term mitigation actions for a two-week horizon.
+
+## What V0 includes
+
+- Structured concern intake with free text context.
+- Severity and impact inputs.
+- 1-2 generated actions with metadata:
+  - owner role
+  - due-in-days
+  - impact / effort / confidence score
+  - leading indicator
+- Multi-user persistence by name/email.
+- 60-day retention for premortem concerns and generated actions.
+- LLM-first generation when `OPENAI_API_KEY` is available, with deterministic fallback.
+
+## Setup
+
+```bash
+pip install fastapi uvicorn sqlalchemy pydantic email-validator requests jinja2
+```
+
+## Run locally
+
+```bash
+uvicorn main:app --reload
+```
+
+Open `http://127.0.0.1:8000/`.
+
+## Optional OpenAI configuration
+
+```bash
+export OPENAI_API_KEY=your_key_here
+export OPENAI_MODEL=gpt-4o-mini
+```
+
+Without an API key, the app uses deterministic generation.
+
+## Deploy to Render
+
+1. Create a new **Web Service** from this repo.
+2. Set build command:
+
+```bash
+pip install fastapi uvicorn sqlalchemy pydantic email-validator requests jinja2
+```
+
+3. Set start command:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+4. Add environment variables:
+   - `OPENAI_API_KEY` (optional but recommended)
+   - `OPENAI_MODEL` (optional)
