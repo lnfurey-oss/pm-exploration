@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Decision Copilot</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <p class="eyebrow">Product Decision Copilot</p>
+        <h1>Decision journal dashboard</h1>
+        <p class="subtitle">
+          Log product decisions, capture assumptions, and reflect on outcomes with
+          lightweight guidance.
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>Create a decision</h2>
+        <form id="decision-form">
+          <label>
+            Decision date
+            <input type="date" name="date" required />
+          </label>
+          <label>
+            Title
+            <input type="text" name="title" placeholder="Launch onboarding survey" required />
+          </label>
+          <label>
+            Context
+            <textarea
+              name="context"
+              rows="4"
+              placeholder="What problem are you solving?"
+              required
+            ></textarea>
+          </label>
+          <label>
+            Constraints (comma-separated)
+            <input type="text" name="constraints" placeholder="Budget limited, Legal review" />
+          </label>
+          <button type="submit">Create decision</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Add assumptions</h2>
+        <form id="assumption-form">
+          <label>
+            Decision ID
+            <input type="number" name="decisionId" min="1" required />
+          </label>
+          <label>
+            Assumptions (one per line)
+            <textarea
+              name="assumptions"
+              rows="4"
+              placeholder="Users will answer a 3-question survey"
+              required
+            ></textarea>
+          </label>
+          <button type="submit">Attach assumptions</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Add outcome</h2>
+        <form id="outcome-form">
+          <label>
+            Decision ID
+            <input type="number" name="decisionId" min="1" required />
+          </label>
+          <label>
+            Outcome
+            <textarea name="outcome" rows="3" required></textarea>
+          </label>
+          <button type="submit">Attach outcome</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Reflection snapshot</h2>
+        <form id="reflection-form">
+          <label>
+            Decision ID
+            <input type="number" name="decisionId" min="1" required />
+          </label>
+          <button type="submit">Generate reflection</button>
+        </form>
+        <pre id="reflection-output" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel helper">
+        <h2>Quick tips</h2>
+        <ul>
+          <li>Log decisions as soon as you commit to an experiment.</li>
+          <li>Keep assumptions short and testable.</li>
+          <li>Update outcomes after every key milestone.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
